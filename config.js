@@ -3,9 +3,9 @@
 // Keep this GitHub repo PRIVATE because the password and database link are in this file.
 module.exports = {
   // MongoDB Atlas connection string, for example: mongodb+srv://user:pass@cluster0.abcde.mongodb.net/
-  mongodbUri: '',
+  mongodbUri: 'mongodb+srv://verifycenter6_db_user:IGKkrBnwz2hZ81GX@cluster0.uy4ci6b.mongodb.net',
   // Password for the admin panel
-  adminPassword: '',
+  adminPassword: 'HASHUU',
   // Any long random text (used to sign admin logins)
   sessionSecret: 'change-this-to-any-long-random-text',
   // Database name inside MongoDB

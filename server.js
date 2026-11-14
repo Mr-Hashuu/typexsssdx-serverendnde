@@ -156,6 +156,54 @@ function sendCsv(res, name, rows) {
   res.end(body);
 }
 
+/* ---------- premium / payments ---------- */
+const DEFAULT_PREMIUM = {
+  enabled: false,
+  payInfo: 'Send the amount to:\nBank: (bank name, branch)\nAccount name: (name)\nAccount number: (number)\neZ Cash: (number)\n\nThen type the reference / transaction ID below.',
+  plans: [
+    { id: 'p1', name: '1 Month', days: 30, price: 300 },
+    { id: 'p2', name: '3 Months', days: 90, price: 750 },
+    { id: 'p3', name: '1 Year', days: 365, price: 2500 }
+  ]
+};
+async function premiumCfg() { return Object.assign({}, DEFAULT_PREMIUM, await db.getSetting('premium', null) || {}); }
+function cleanPremium(b) {
+  const src = Array.isArray(b.plans) ? b.plans : [];
+  if (src.length < 1 || src.length > 6) return { error: 'Add 1 to 6 plans' };
+  const plans = [];
+  for (let i = 0; i < src.length; i++) {
+    const it = src[i] || {};
+    const name = str(it.name, 30), days = parseInt(it.days, 10), price = Math.round(Number(it.price));
+    if (!name) return { error: 'Plan ' + (i + 1) + ' needs a name' };
+    if (!(days >= 1 && days <= 3650)) return { error: 'Plan ' + (i + 1) + ': days must be 1 to 3650' };
+    if (!(price >= 1 && price <= 1000000)) return { error: 'Plan ' + (i + 1) + ': price must be 1 to 1,000,000' };
+    plans.push({ id: 'p' + (i + 1), name, days, price });
+  }
+  return { cfg: { enabled: !!b.enabled, payInfo: str(b.payInfo, 800), plans } };
+}
+const refKeyOf = r => String(r).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const vipUntil = d => (d && d.premiumUntil) || 0;
+function pubPayment(p) { return { id: p.id, plan: p.planName, amount: p.amount, status: p.status, ts: p.ts, note: p.note || '' }; }
+async function premiumState(id) {
+  const [cfg, d, list] = await Promise.all([premiumCfg(), db.getDevice(id), db.paymentsFor(id, 5)]);
+  const until = vipUntil(d);
+  return { enabled: !!cfg.enabled, plans: cfg.plans, payInfo: cfg.payInfo, until, active: until > Date.now(), plan: (d && d.premiumPlan) || '', requests: list.map(pubPayment) };
+}
+async function premiumStats() {
+  const [pending, vip, ap] = await Promise.all([db.countPayments('pending'), db.countVip(), db.approvedPayments(5000)]);
+  const now = Date.now(), day0 = new Date(now); day0.setUTCHours(0, 0, 0, 0);
+  let total = 0, today = 0, d7 = 0, d30 = 0; const daily = {}, byPlan = {};
+  ap.forEach(p => {
+    const a = p.amount || 0, t = p.decidedAt || p.ts;
+    total += a; if (t >= day0.getTime()) today += a; if (now - t < 7 * 864e5) d7 += a; if (now - t < 30 * 864e5) d30 += a;
+    const k = new Date(t).toISOString().slice(0, 10); daily[k] = (daily[k] || 0) + a;
+    byPlan[p.planName] = (byPlan[p.planName] || 0) + 1;
+  });
+  const days = [];
+  for (let i = 13; i >= 0; i--) { const k = new Date(now - i * 864e5).toISOString().slice(0, 10); days.push({ d: k, n: daily[k] || 0 }); }
+  return { pending, vip, approved: ap.length, income: { total, today, d7, d30 }, daily: days, byPlan: Object.entries(byPlan).sort((a, b) => b[1] - a[1]) };
+}
+
 /* ---------- routes ---------- */
 async function publicApi(req, res, url) {
   const ip = ipOf(req);
@@ -169,7 +217,9 @@ async function publicApi(req, res, url) {
     if (!okId(id)) return send(res, 400, { error: 'Bad id' });
     await db.upsertDevice(id, { v: str(b.v, 16) || '?', model: str(b.model, 60), sdk: parseInt(b.sdk, 10) || 0 });
     const bi = await blockInfo(id);
-    return send(res, 200, bi ? { ok: true, blocked: true, reason: bi.reason } : { ok: true, blocked: false });
+    const cfgP = await premiumCfg(), dv = await db.getDevice(id);
+    const prem = { premiumOn: !!cfgP.enabled, premiumUntil: vipUntil(dv), premiumPlan: (dv && dv.premiumPlan) || '' };
+    return send(res, 200, Object.assign(bi ? { ok: true, blocked: true, reason: bi.reason } : { ok: true, blocked: false }, prem));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/messages') {
@@ -198,6 +248,33 @@ async function publicApi(req, res, url) {
     if (!answers) return send(res, 400, { error: 'Please answer every question' });
     await db.upsertResponse({ survey: s.id, device: id, answers, v: str(b.v, 16) || '?', ts: Date.now() });
     return send(res, 200, { ok: true });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/premium') {
+    const id = str(url.searchParams.get('id'), 64);
+    if (!okId(id)) return send(res, 400, { error: 'Bad id' });
+    return send(res, 200, await premiumState(id));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/premium/request') {
+    if (limited('pay|' + ip, 12, 3600000)) return send(res, 429, { error: 'Too many requests. Try again later.' });
+    const b = await readJson(req);
+    const id = str(b.id, 64), ref = str(b.ref, 40), name = str(b.name, 40), pid = str(b.plan, 8);
+    if (!okId(id)) return send(res, 400, { error: 'Bad id' });
+    if (await blockInfo(id)) return send(res, 403, { error: 'This phone is blocked' });
+    const cfg = await premiumCfg();
+    if (!cfg.enabled) return send(res, 409, { error: 'Premium is not open yet' });
+    const plan = cfg.plans.find(x => x.id === pid);
+    if (!plan) return send(res, 400, { error: 'Choose a plan' });
+    const key = refKeyOf(ref);
+    if (key.length < 4) return send(res, 400, { error: 'Enter the payment reference / transaction ID' });
+    if (await db.countPendingFor(id) >= 3) return send(res, 429, { error: 'You already have 3 requests waiting. Please wait for approval.' });
+    if (await db.findRef(key)) return send(res, 409, { error: 'This reference was already used' });
+    await db.upsertDevice(id, {});
+    const ts = Date.now();
+    const p = { id: ts.toString(36) + crypto.randomBytes(3).toString('hex'), device: id, plan: plan.id, planName: plan.name, days: plan.days, amount: plan.price, ref, refKey: key, name, status: 'pending', ts, decidedAt: 0, note: '' };
+    await db.insertPayment(p);
+    return send(res, 200, { ok: true, request: pubPayment(p) });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/ack') {
@@ -233,8 +310,8 @@ async function adminApi(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/admin/api/me') return send(res, 200, { ok: true, db: db.kind });
   if (req.method === 'GET' && url.pathname === '/admin/api/stats') {
     const live = await liveSurvey();
-    const [st, msgs, bd, sc] = await Promise.all([db.stats(), db.listMessages(1), db.breakdown(), db.countResponses(live.id)]);
-    return send(res, 200, Object.assign(st, { latest: msgs[0] || null, db: db.kind, breakdown: bd, surveyAnswers: sc, surveyTitle: live.title }));
+    const [st, msgs, bd, sc, pend, vip] = await Promise.all([db.stats(), db.listMessages(1), db.breakdown(), db.countResponses(live.id), db.countPayments('pending'), db.countVip()]);
+    return send(res, 200, Object.assign(st, { latest: msgs[0] || null, db: db.kind, breakdown: bd, surveyAnswers: sc, surveyTitle: live.title, pendingPayments: pend, vip }));
   }
   if (req.method === 'GET' && url.pathname === '/admin/api/devices') return send(res, 200, { devices: await db.listDevices(200, str(url.searchParams.get('q'), 40), url.searchParams.get('blocked') === '1') });
   if (req.method === 'POST' && url.pathname === '/admin/api/devices/block') {
@@ -290,6 +367,60 @@ async function adminApi(req, res, url) {
     const head = ['Phone', 'App version', 'Answered at'].concat(s.questions.map(q => q.q));
     const rows = list.map(r => [String(r.device).slice(0, 8), r.v || '', new Date(r.ts).toISOString()].concat(s.questions.map(q => ((r.answers && r.answers[q.id]) || []).join(' | '))));
     return sendCsv(res, 'typex-survey-' + s.id + '.csv', [head].concat(rows));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/admin/api/premium') {
+    const [cfg, stats, vips] = await Promise.all([premiumCfg(), premiumStats(), db.listVip(100)]);
+    return send(res, 200, { config: cfg, stats, vips });
+  }
+  if (req.method === 'POST' && url.pathname === '/admin/api/premium/config') {
+    const c = cleanPremium(await readJson(req, 16384));
+    if (c.error) return send(res, 400, { error: c.error });
+    await db.setSetting('premium', c.cfg);
+    return send(res, 200, { ok: true, config: c.cfg });
+  }
+  if (req.method === 'POST' && url.pathname === '/admin/api/premium/grant') {
+    const b = await readJson(req);
+    const id = str(b.id, 64), days = parseInt(b.days, 10);
+    if (!okId(id)) return send(res, 400, { error: 'Bad id' });
+    if (!(days >= 0 && days <= 3650)) return send(res, 400, { error: 'Days must be 0 to 3650 (0 removes premium)' });
+    const d = await db.getDevice(id);
+    if (!d) return send(res, 404, { error: 'Phone not found' });
+    const until = days === 0 ? 0 : Math.max(Date.now(), vipUntil(d)) + days * 864e5;
+    await db.setPremium(id, until, days === 0 ? '' : 'Gift');
+    return send(res, 200, { ok: true, until });
+  }
+  if (req.method === 'GET' && url.pathname === '/admin/api/payments') {
+    const st = str(url.searchParams.get('status'), 10);
+    const list = await db.listPayments(['pending', 'approved', 'rejected'].includes(st) ? st : '', 200);
+    const devs = {};
+    await Promise.all([...new Set(list.map(p => p.device))].map(async id => { const d = await db.getDevice(id); devs[id] = d ? { model: d.model || '', v: d.v || '' } : { model: '', v: '' }; }));
+    return send(res, 200, { payments: list.map(p => Object.assign({}, p, { model: devs[p.device].model, v: devs[p.device].v })) });
+  }
+  if (req.method === 'POST' && url.pathname === '/admin/api/payments/decide') {
+    const b = await readJson(req);
+    const id = str(b.id, 64), note = str(b.note, 120);
+    if (b.action !== 'approve' && b.action !== 'reject') return send(res, 400, { error: 'Bad action' });
+    const p0 = await db.getPayment(id);
+    if (!p0) return send(res, 404, { error: 'Payment not found' });
+    if (p0.status !== 'pending') return send(res, 409, { error: 'Already ' + p0.status });
+    if (b.action === 'reject') {
+      const p = await db.decidePayment(id, { status: 'rejected', decidedAt: Date.now(), note });
+      return send(res, p ? 200 : 409, p ? { ok: true } : { error: 'Already decided' });
+    }
+    let days = parseInt(b.days, 10); if (!(days >= 1 && days <= 3650)) days = p0.days;
+    const p = await db.decidePayment(id, { status: 'approved', decidedAt: Date.now(), note, days });
+    if (!p) return send(res, 409, { error: 'Already decided' });
+    const d = await db.getDevice(p.device);
+    if (!d) await db.upsertDevice(p.device, {});
+    const until = Math.max(Date.now(), vipUntil(d)) + days * 864e5;
+    await db.setPremium(p.device, until, p.planName);
+    return send(res, 200, { ok: true, until });
+  }
+  if (req.method === 'GET' && url.pathname === '/admin/api/payments.csv') {
+    const list = await db.listPayments('', 5000);
+    const iso = t => t ? new Date(t).toISOString() : '';
+    return sendCsv(res, 'typex-payments.csv', [['Date', 'Status', 'Plan', 'Days', 'Amount (LKR)', 'Reference', 'Payer name', 'Phone id', 'Decided', 'Note']].concat(list.map(p => [iso(p.ts), p.status, p.planName, p.days, p.amount, p.ref, p.name || '', p.device, iso(p.decidedAt), p.note || ''])));
   }
 
   if (req.method === 'GET' && url.pathname === '/admin/api/update') {

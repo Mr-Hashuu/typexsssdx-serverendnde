@@ -22,7 +22,7 @@ function lastDays(map, days) {
 const escRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function memoryDb() {
-  const settings = new Map(), devices = new Map(), messages = [], responses = [];
+  const settings = new Map(), devices = new Map(), messages = [], responses = [], payments = [];
   return {
     kind: 'memory',
     async init() {},
@@ -71,6 +71,19 @@ function memoryDb() {
         versions
       };
     },
+
+    async insertPayment(p) { payments.unshift(Object.assign({}, p)); },
+    async getPayment(id) { const p = payments.find(x => x.id === id); return p ? Object.assign({}, p) : null; },
+    async listPayments(status, limit) { return payments.filter(x => !status || x.status === status).sort((a, b) => b.ts - a.ts).slice(0, limit).map(x => Object.assign({}, x)); },
+    async findRef(refKey) { const p = payments.find(x => x.refKey === refKey && x.status !== 'rejected'); return p ? Object.assign({}, p) : null; },
+    async countPayments(status) { return payments.filter(x => x.status === status).length; },
+    async countPendingFor(device) { return payments.filter(x => x.device === device && x.status === 'pending').length; },
+    async decidePayment(id, f) { const p = payments.find(x => x.id === id && x.status === 'pending'); if (!p) return null; Object.assign(p, f); return Object.assign({}, p); },
+    async approvedPayments(limit) { return payments.filter(x => x.status === 'approved').sort((a, b) => b.decidedAt - a.decidedAt).slice(0, limit).map(x => Object.assign({}, x)); },
+    async paymentsFor(device, limit) { return payments.filter(x => x.device === device).sort((a, b) => b.ts - a.ts).slice(0, limit).map(x => Object.assign({}, x)); },
+    async setPremium(id, until, plan) { const d = devices.get(id); if (!d) return false; d.premiumUntil = until; d.premiumPlan = plan || ''; return true; },
+    async countVip() { const now = Date.now(); return [...devices.values()].filter(d => (d.premiumUntil || 0) > now).length; },
+    async listVip(limit) { const now = Date.now(); return [...devices.values()].filter(d => (d.premiumUntil || 0) > now).sort((a, b) => b.premiumUntil - a.premiumUntil).slice(0, limit); },
     async insertMessage(m) { messages.unshift(m); },
     async listMessages(limit) { return messages.slice(0, limit); },
     async messagesSince(ts, limit) { return messages.filter(m => m.ts > ts).sort((a, b) => a.ts - b.ts).slice(-limit); },
@@ -83,18 +96,22 @@ function memoryDb() {
 function mongoDb(uri) {
   const { MongoClient } = require('mongodb');
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000 });
-  let S, D, M, R;
+  let S, D, M, R, P;
   const strip = d => { if (d) delete d._id; return d; };
   return {
     kind: 'mongodb',
     async init() {
       await client.connect();
       const db = client.db(require('./config').dbName || 'typex');
-      S = db.collection('settings'); D = db.collection('devices'); M = db.collection('messages'); R = db.collection('responses');
+      S = db.collection('settings'); D = db.collection('devices'); M = db.collection('messages'); R = db.collection('responses'); P = db.collection('payments');
       await D.createIndex({ last: -1 });
       await M.createIndex({ ts: -1 });
       await M.createIndex({ id: 1 }, { unique: true });
       await R.createIndex({ survey: 1, device: 1 }, { unique: true });
+      await P.createIndex({ id: 1 }, { unique: true });
+      await P.createIndex({ status: 1, ts: -1 });
+      await P.createIndex({ refKey: 1 });
+      await P.createIndex({ device: 1, ts: -1 });
     },
     async getSetting(k, d) { const r = await S.findOne({ _id: k }); return r ? r.value : d; },
     async setSetting(k, v) { await S.updateOne({ _id: k }, { $set: { value: v } }, { upsert: true }); },
@@ -144,6 +161,19 @@ function mongoDb(uri) {
       vs.forEach(r => { versions[r._id || '?'] = r.n; });
       return { total, active24h: a24, active7d: a7, new24h: n24, blocked: nb, versions };
     },
+
+    async insertPayment(p) { await P.insertOne(Object.assign({}, p)); },
+    async getPayment(id) { return strip(await P.findOne({ id })); },
+    async listPayments(status, limit) { return (await P.find(status ? { status } : {}).sort({ ts: -1 }).limit(limit).toArray()).map(strip); },
+    async findRef(refKey) { return strip(await P.findOne({ refKey, status: { $ne: 'rejected' } })); },
+    async countPayments(status) { return P.countDocuments({ status }); },
+    async countPendingFor(device) { return P.countDocuments({ device, status: 'pending' }); },
+    async decidePayment(id, f) { return strip(await P.findOneAndUpdate({ id, status: 'pending' }, { $set: f }, { returnDocument: 'after' })); },
+    async approvedPayments(limit) { return (await P.find({ status: 'approved' }).sort({ decidedAt: -1 }).limit(limit).toArray()).map(strip); },
+    async paymentsFor(device, limit) { return (await P.find({ device }).sort({ ts: -1 }).limit(limit).toArray()).map(strip); },
+    async setPremium(id, until, plan) { return (await D.updateOne({ _id: id }, { $set: { premiumUntil: until, premiumPlan: plan || '' } })).matchedCount > 0; },
+    async countVip() { return D.countDocuments({ premiumUntil: { $gt: Date.now() } }); },
+    async listVip(limit) { return (await D.find({ premiumUntil: { $gt: Date.now() } }).sort({ premiumUntil: -1 }).limit(limit).toArray()).map(d => { d.id = d._id; delete d._id; return d; }); },
     async insertMessage(m) { await M.insertOne(Object.assign({}, m)); },
     async listMessages(limit) { return (await M.find({}).sort({ ts: -1 }).limit(limit).toArray()).map(strip); },
     async messagesSince(ts, limit) { return (await M.find({ ts: { $gt: ts } }).sort({ ts: -1 }).limit(limit).toArray()).map(strip).reverse(); },

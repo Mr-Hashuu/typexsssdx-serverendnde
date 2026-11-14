@@ -124,6 +124,7 @@ a.btn{display:inline-block;text-decoration:none}
     <button class="nav" data-p="notify"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>Notifications</button>
     <button class="nav" data-p="update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>App updates</button>
     <button class="nav" data-p="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Phones</button>
+    <button class="nav" data-p="pay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</button>
     <button class="nav" data-p="survey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>Surveys</button>
     <div class="sp"></div>
     <button class="nav" id="out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out</button>
@@ -134,6 +135,7 @@ a.btn{display:inline-block;text-decoration:none}
     <button data-p="notify"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>Notify</button>
     <button data-p="update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Update</button>
     <button data-p="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Phones</button>
+    <button data-p="pay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Pay</button>
     <button data-p="survey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>Survey</button>
     <button id="out2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out</button>
   </nav>
@@ -176,7 +178,7 @@ function go(p) {
   page = p;
   $$('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === p));
   const v = $('#view'); v.innerHTML = '<div class="sk"></div><div class="sk sec"></div><div class="sk sec"></div>';
-  ({ home, notify, update, devices, survey })[p]().catch(e => { if (e.message !== 'Login required') v.innerHTML = '<div class="card">' + esc(e.message) + '</div>'; });
+  ({ home, notify, update, devices, survey, pay })[p]().catch(e => { if (e.message !== 'Login required') v.innerHTML = '<div class="card">' + esc(e.message) + '</div>'; });
 }
 
 async function home() {
@@ -198,6 +200,8 @@ async function home() {
     <div class="stat"><span>New today</span><b>${s.new24h}</b></div>
     <div class="stat"><span>Survey answers</span><b>${s.surveyAnswers || 0}</b></div>
     <div class="stat"><span>Blocked phones</span><b>${s.blocked || 0}</b></div>
+    <div class="stat" style="cursor:pointer" onclick="go('pay')"><span>Payments waiting</span><b>${s.pendingPayments || 0}</b></div>
+    <div class="stat"><span>Active premium</span><b>${s.vip || 0}</b></div>
   </div>
   <div class="card sec"><h2>New phones, last 14 days</h2><div class="cols">${cols}</div></div>
   <div class="two">
@@ -284,13 +288,18 @@ async function devices() {
   let timer;
   const load = async () => {
     const { devices: d } = await api('GET', '/admin/api/devices?q=' + encodeURIComponent($('#dq').value.trim()) + ($('#df').value ? '&blocked=1' : ''));
-    const rows = d.map(x => `<tr><td data-l="Phone">${esc(x.model || 'Unknown')}${x.blocked ? ' <span class="pill" style="background:#3a1620;color:var(--bad)">Blocked</span>' : ''}${x.blocked && x.reason ? `<div class="mut sm">${esc(x.reason)}</div>` : ''}</td><td data-l="Version">${esc(x.v)}</td><td data-l="Android">${x.sdk ? 'API ' + esc(x.sdk) : '-'}</td><td data-l="Last seen">${ago(x.last)}</td><td data-l="First seen">${ago(x.first)}</td><td><button class="btn ${x.blocked ? 'ghost' : 'danger'} sm2" data-bk="${esc(x.id)}" data-bs="${x.blocked ? '' : '1'}">${x.blocked ? 'Unblock' : 'Block'}</button> <button class="btn ghost sm2" data-rm="${esc(x.id)}">Remove</button></td></tr>`).join('');
+    const rows = d.map(x => `<tr><td data-l="Phone">${esc(x.model || 'Unknown')}${x.blocked ? ' <span class="pill" style="background:#3a1620;color:var(--bad)">Blocked</span>' : ''}${(x.premiumUntil || 0) > Date.now() ? ' <span class="pill ok">Premium</span>' : ''}${x.blocked && x.reason ? `<div class="mut sm">${esc(x.reason)}</div>` : ''}</td><td data-l="Version">${esc(x.v)}</td><td data-l="Android">${x.sdk ? 'API ' + esc(x.sdk) : '-'}</td><td data-l="Last seen">${ago(x.last)}</td><td data-l="First seen">${ago(x.first)}</td><td><button class="btn ${x.blocked ? 'ghost' : 'danger'} sm2" data-bk="${esc(x.id)}" data-bs="${x.blocked ? '' : '1'}">${x.blocked ? 'Unblock' : 'Block'}</button> <button class="btn ghost sm2" data-gift="${esc(x.id)}">Premium</button> <button class="btn ghost sm2" data-rm="${esc(x.id)}">Remove</button></td></tr>`).join('');
     $('#dl').innerHTML = rows ? `<div class="mut sm" style="padding:6px 4px">Showing ${d.length} phones (most recent 200)</div><table><thead><tr><th>Phone</th><th>Version</th><th>Android</th><th>Last seen</th><th>First seen</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="mut" style="padding:12px">No phones found.</div>';
     $$('[data-bk]').forEach(b => b.onclick = async () => {
       const block = !!b.dataset.bs; let reason = '';
       if (block) { reason = prompt('Block this phone from the Typex server (updates, messages, survey). Reason, shown to you only (optional):', ''); if (reason === null) return; }
       else if (!confirm('Unblock this phone?')) return;
       try { await api('POST', '/admin/api/devices/block', { id: b.dataset.bk, blocked: block, reason }); toast(block ? 'Phone blocked' : 'Phone unblocked'); load(); } catch (e) { toast(e.message, true); }
+    });
+    $$('[data-gift]').forEach(b => b.onclick = async () => {
+      const v = prompt('Give premium days to this phone (a gift or a manual payment). Type 0 to remove premium.', '30');
+      if (v === null) return;
+      try { await api('POST', '/admin/api/premium/grant', { id: b.dataset.gift, days: parseInt(v, 10) }); toast('Done'); load(); } catch (e) { toast(e.message, true); }
     });
     $$('[data-rm]').forEach(b => b.onclick = async () => {
       if (!confirm('Remove this phone from the list? It appears again the next time it connects.')) return;
@@ -300,6 +309,85 @@ async function devices() {
   $('#df').onchange = () => load().catch(e => toast(e.message, true));
   $('#dq').oninput = () => { clearTimeout(timer); timer = setTimeout(() => load().catch(e => toast(e.message, true)), 300); };
   await load();
+}
+
+
+const lkr = n => 'Rs. ' + Math.round(n || 0).toLocaleString('en-US');
+const dstr = t => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+let payFilter = 'pending';
+async function pay() {
+  const r = await api('GET', '/admin/api/premium');
+  const c = r.config, st = r.stats;
+  const dmax = Math.max(1, ...st.daily.map(x => x.n));
+  const cols = st.daily.map(x => `<div title="${esc(x.d)}: ${lkr(x.n)}"><span>${x.n ? Math.round(x.n) : ''}</span><i style="height:${Math.round(x.n / dmax * 70)}%"></i><span>${esc(x.d.slice(8))}</span></div>`).join('');
+  const planRow = (pl, i) => `<div class="row" data-plan style="margin-top:8px"><input type="text" data-k="name" placeholder="Plan name" maxlength="30" value="${esc(pl.name)}"><input type="text" data-k="days" inputmode="numeric" placeholder="Days" value="${esc(pl.days)}"><input type="text" data-k="price" inputmode="numeric" placeholder="Price (Rs.)" value="${esc(pl.price)}"><button class="btn danger sm2" style="flex:none;min-width:0" data-rp>Remove</button></div>`;
+  const vips = (r.vips || []).map(v => `<tr><td data-l="Phone">${esc(v.model || 'Unknown')}<div class="mut sm">${esc(String(v.id).slice(0, 8))}</div></td><td data-l="Plan">${esc(v.premiumPlan || '-')}</td><td data-l="Until">${dstr(v.premiumUntil)}</td><td><button class="btn danger sm2" data-vx="${esc(v.id)}">Remove</button></td></tr>`).join('');
+  $('#view').innerHTML = `
+  <div class="top"><div><h1>Payments</h1><div class="mut sm">Users pay to your account, send the reference, you check it and press Approve</div></div><a class="btn ghost" href="/admin/api/payments.csv">Download CSV</a></div>
+  <div class="grid">
+    <div class="stat"><span>Waiting</span><b>${st.pending}</b></div>
+    <div class="stat"><span>Active premium</span><b>${st.vip}</b></div>
+    <div class="stat"><span>Today</span><b style="font-size:20px">${lkr(st.income.today)}</b></div>
+    <div class="stat"><span>7 days</span><b style="font-size:20px">${lkr(st.income.d7)}</b></div>
+    <div class="stat"><span>30 days</span><b style="font-size:20px">${lkr(st.income.d30)}</b></div>
+    <div class="stat"><span>All time</span><b style="font-size:20px">${lkr(st.income.total)}</b></div>
+  </div>
+  <div class="card sec"><h2>Income, last 14 days (Rs.)</h2><div class="cols">${cols}</div>${st.byPlan.length ? `<div class="mut sm" style="margin-top:10px">Sold: ${st.byPlan.map(([k, n]) => esc(k) + ' x' + n).join(' / ')}</div>` : ''}</div>
+
+  <div class="sec"><h2>Requests</h2>
+    <div class="seg" id="pf"><button data-f="pending">Waiting</button><button data-f="approved">Approved</button><button data-f="rejected">Rejected</button><button data-f="">All</button></div>
+    <div id="pl"></div>
+  </div>
+
+  <div class="card sec">
+    <h2>Premium settings</h2>
+    <div class="sw" style="margin-top:0"><div><b>Premium is <span id="pst">${c.enabled ? 'ON' : 'OFF'}</span></b><div class="mut sm">While OFF, every feature is free for everyone (nothing is locked)</div></div><input type="checkbox" id="pon" ${c.enabled ? 'checked' : ''}></div>
+    <label for="pi">Payment instructions (users see this: bank details, eZ Cash number)</label>
+    <textarea id="pi" maxlength="800">${esc(c.payInfo)}</textarea>
+    <label>Plans</label>
+    <div id="plans">${c.plans.map(planRow).join('')}</div>
+    <button class="btn ghost sm2" id="addp" style="margin-top:10px">Add plan</button>
+    <button class="btn block" id="psave">Save settings</button>
+  </div>
+
+  <div class="card sec" style="padding:8px 12px"><h2 style="margin:10px 4px 0">Active premium phones</h2>
+    ${vips ? `<table><thead><tr><th>Phone</th><th>Plan</th><th>Until</th><th></th></tr></thead><tbody>${vips}</tbody></table>` : '<div class="mut" style="padding:12px">No premium phones yet.</div>'}
+  </div>`;
+
+  $('#pon').onchange = e => $('#pst').textContent = e.target.checked ? 'ON' : 'OFF';
+  const bindRm = () => $$('[data-rp]').forEach(b => b.onclick = () => b.closest('[data-plan]').remove());
+  bindRm();
+  $('#addp').onclick = () => { if ($$('[data-plan]').length >= 6) return toast('Up to 6 plans', true); $('#plans').insertAdjacentHTML('beforeend', planRow({ name: '', days: '', price: '' })); bindRm(); };
+  $('#psave').onclick = async () => {
+    const plans = $$('[data-plan]').map(r => ({ name: r.querySelector('[data-k=name]').value, days: r.querySelector('[data-k=days]').value, price: r.querySelector('[data-k=price]').value }));
+    const b = $('#psave'); b.disabled = true;
+    try { await api('POST', '/admin/api/premium/config', { enabled: $('#pon').checked, payInfo: $('#pi').value, plans }); toast('Saved'); } catch (e) { toast(e.message, true); }
+    b.disabled = false;
+  };
+  $$('[data-vx]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove premium from this phone?')) return;
+    try { await api('POST', '/admin/api/premium/grant', { id: b.dataset.vx, days: 0 }); toast('Removed'); go('pay'); } catch (e) { toast(e.message, true); }
+  });
+  $$('#pf button').forEach(b => { b.classList.toggle('on', b.dataset.f === payFilter); b.onclick = () => { payFilter = b.dataset.f; $$('#pf button').forEach(x => x.classList.toggle('on', x === b)); loadPay(); }; });
+
+  async function loadPay() {
+    const { payments } = await api('GET', '/admin/api/payments' + (payFilter ? '?status=' + payFilter : ''));
+    const badge = x => x.status === 'approved' ? '<span class="pill ok">Approved</span>' : x.status === 'rejected' ? '<span class="pill" style="background:#3a1620;color:var(--bad)">Rejected</span>' : '<span class="pill">Waiting</span>';
+    $('#pl').innerHTML = payments.map(x => `<div class="item"><div class="h"><div><b>${esc(x.planName)} / ${lkr(x.amount)}</b><div class="mut sm">${ago(x.ts)} / ${esc(x.model || 'Unknown phone')} ${esc(x.v)} / ${esc(String(x.device).slice(0, 8))}</div></div><div>${badge(x)}</div></div>
+      <p style="font-family:ui-monospace,monospace">Ref: ${esc(x.ref)}${x.name ? '<br><span class="mut" style="font-family:inherit">Payer: ' + esc(x.name) + '</span>' : ''}${x.note ? '<br><span class="mut" style="font-family:inherit">Note: ' + esc(x.note) + '</span>' : ''}</p>
+      ${x.status === 'pending' ? `<div style="margin-top:10px;display:flex;gap:8px"><button class="btn sm2" data-ap="${esc(x.id)}" data-pl="${esc(x.planName)}" data-am="${x.amount}">Approve</button><button class="btn danger sm2" data-rj="${esc(x.id)}">Reject</button></div>` : ''}</div>`).join('') || '<div class="mut" style="margin-top:12px">Nothing here.</div>';
+    $$('[data-ap]').forEach(b => b.onclick = async () => {
+      if (!confirm('Check that ' + lkr(b.dataset.am) + ' really arrived in your account with this reference. Approve ' + b.dataset.pl + '?')) return;
+      b.disabled = true;
+      try { await api('POST', '/admin/api/payments/decide', { id: b.dataset.ap, action: 'approve' }); toast('Approved, premium is on'); go('pay'); } catch (e) { toast(e.message, true); b.disabled = false; }
+    });
+    $$('[data-rj]').forEach(b => b.onclick = async () => {
+      const note = prompt('Reason (the user sees this):', 'Payment not found');
+      if (note === null) return;
+      try { await api('POST', '/admin/api/payments/decide', { id: b.dataset.rj, action: 'reject', note }); toast('Rejected'); go('pay'); } catch (e) { toast(e.message, true); }
+    });
+  }
+  await loadPay();
 }
 
 async function survey() {

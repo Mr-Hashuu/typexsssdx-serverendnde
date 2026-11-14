@@ -6,6 +6,7 @@ One server for every Typex Board phone:
 - **Phones connect by themselves**: the app pings the server (anonymous random id, app version, phone model), checks for messages every hour and when the keyboard opens, and checks for updates every hour.
 - **Surveys**: write questions in the admin panel (Surveys page), phones show them in the app dashboard, you see live results with percentages, download all answers as CSV, clear them, or publish a new survey any time. Each phone has one answer per survey (it can change it).
 - **Phone control**: Overview shows new phones per day (14 days), Android versions, top phone models and versions. Phones page has search, CSV download and a Remove button.
+- **Payments (manual approval)**: admin panel > Payments. Users open Premium in the app, pick a plan, pay to your bank / eZ Cash account, and type the payment reference. The request appears in **Waiting**; you check your account, press **Approve** (premium turns on for that phone and time is added) or **Reject** (with a reason the user sees). Income today / 7 days / 30 days / all time, a 14-day chart, active premium phones, CSV download, and a Premium button on the Phones page to gift or remove days. **Premium OFF = every feature stays free** (switch it on in Payments > Premium settings when you are ready).
 - **Updates**: you publish a version + APK link (or let the server follow your GitHub releases). Phones download it, show the install notification, or show "Update required" if you switch Required on.
 
 ## Deploy on Render (free)
@@ -41,8 +42,10 @@ npm test                          # end to end test of the API
 | Call | Purpose |
 |---|---|
 | `GET /api/update` | `{versionName, notes, apk, page, force}`, the same shape the app's updater already reads |
-| `POST /api/ping` | `{id, v, model, sdk}` registers or refreshes a phone |
+| `POST /api/ping` | `{id, v, model, sdk}` registers or refreshes a phone; the answer also carries `premiumOn`, `premiumUntil`, `premiumPlan` |
 | `GET /api/messages?since=<ts>&v=<version>&id=<id>` | messages newer than `since` for this version |
 | `GET /api/survey` | the live survey `{id, title, questions:[{id, q, options, multi}]}` (built-in questions until you publish one) |
 | `POST /api/survey` | `{id, survey, v, answers:{questionId:[option,...]}}`, every question must be answered with its own options |
+| `GET /api/premium?id=<phone id>` | `{enabled, plans, payInfo, until, active, plan, requests:[...]}` for the Premium screen |
+| `POST /api/premium/request` | `{id, plan, ref, name}` creates a waiting payment request (one reference can be used once; 3 waiting per phone) |
 | `POST /api/ack` | `{id, msg}` counts a message as delivered once per phone |

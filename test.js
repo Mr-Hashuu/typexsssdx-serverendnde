@@ -116,6 +116,49 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   r = await j('POST', '/api/ping', { id: d2, v: '2.5', model: 'Galaxy A14', sdk: 33 }); assert.equal(r.o.blocked, false);
   assert.equal((await j('GET', '/admin/api/stats', null, A)).o.blocked, 0);
 
+  // premium / payments (manual approval)
+  r = await j('GET', '/api/premium?id=' + d1); assert.equal(r.s, 200); assert.equal(r.o.enabled, false); assert.equal(r.o.active, false); assert.equal(r.o.plans.length, 3);
+  r = await j('POST', '/api/ping', { id: d1, v: '2.8', model: 'Redmi 12', sdk: 34 }); assert.equal(r.o.premiumOn, false); assert.equal(r.o.premiumUntil, 0);
+  assert.equal((await j('POST', '/api/premium/request', { id: d1, plan: 'p1', ref: 'ABC12345' })).s, 409); // premium still off
+  assert.equal((await j('GET', '/admin/api/premium')).s, 401);
+  assert.equal((await j('POST', '/admin/api/premium/config', { enabled: true, plans: [] }, A)).s, 400);
+  assert.equal((await j('POST', '/admin/api/premium/config', { enabled: true, payInfo: 'Bank X 123', plans: [{ name: 'Month', days: 30, price: 300 }, { name: 'Year', days: 365, price: 2500 }] }, A)).s, 200);
+  r = await j('POST', '/api/ping', { id: d1, v: '2.8', model: 'Redmi 12', sdk: 34 }); assert.equal(r.o.premiumOn, true);
+  assert.equal((await j('POST', '/api/premium/request', { id: d1, plan: 'zz', ref: 'ABC12345' })).s, 400);
+  assert.equal((await j('POST', '/api/premium/request', { id: d1, plan: 'p1', ref: 'ab' })).s, 400);
+  r = await j('POST', '/api/premium/request', { id: d1, plan: 'p1', ref: 'EZ-98765', name: 'Kamal' }); assert.equal(r.s, 200); assert.equal(r.o.request.status, 'pending'); assert.equal(r.o.request.amount, 300);
+  assert.equal((await j('POST', '/api/premium/request', { id: d2, plan: 'p1', ref: 'ez 98765' })).s, 409); // same reference, other phone
+  r = await j('GET', '/api/premium?id=' + d1); assert.equal(r.o.active, false); assert.equal(r.o.requests.length, 1);
+  r = await j('GET', '/admin/api/payments?status=pending', null, A); assert.equal(r.o.payments.length, 1); const pid = r.o.payments[0].id; assert.equal(r.o.payments[0].model, 'Redmi 12');
+  r = await j('GET', '/admin/api/stats', null, A); assert.equal(r.o.pendingPayments, 1);
+  assert.equal((await j('POST', '/admin/api/payments/decide', { id: pid, action: 'approve' })).s, 401);
+  r = await j('POST', '/admin/api/payments/decide', { id: pid, action: 'approve' }, A); assert.equal(r.s, 200); assert(r.o.until > Date.now() + 29 * 864e5);
+  assert.equal((await j('POST', '/admin/api/payments/decide', { id: pid, action: 'approve' }, A)).s, 409); // cannot approve twice
+  r = await j('GET', '/api/premium?id=' + d1); assert.equal(r.o.active, true); assert.equal(r.o.plan, 'Month'); assert.equal(r.o.requests[0].status, 'approved');
+  r = await j('POST', '/api/ping', { id: d1, v: '2.8', model: 'Redmi 12', sdk: 34 }); assert(r.o.premiumUntil > Date.now());
+  // second approved payment extends the time instead of replacing it
+  r = await j('POST', '/api/premium/request', { id: d1, plan: 'p2', ref: 'EZ-55555' }); assert.equal(r.s, 200);
+  const pid2 = (await j('GET', '/admin/api/payments?status=pending', null, A)).o.payments[0].id;
+  const before = (await j('GET', '/api/premium?id=' + d1)).o.until;
+  await j('POST', '/admin/api/payments/decide', { id: pid2, action: 'approve' }, A);
+  assert(Math.abs((await j('GET', '/api/premium?id=' + d1)).o.until - before - 365 * 864e5) < 5000);
+  // reject keeps premium unchanged and frees the reference
+  r = await j('POST', '/api/premium/request', { id: d2, plan: 'p1', ref: 'EZ-77777' }); const pid3 = (await j('GET', '/admin/api/payments?status=pending', null, A)).o.payments[0].id;
+  assert.equal((await j('POST', '/admin/api/payments/decide', { id: pid3, action: 'reject', note: 'Not found' }, A)).s, 200);
+  r = await j('GET', '/api/premium?id=' + d2); assert.equal(r.o.active, false); assert.equal(r.o.requests[0].status, 'rejected'); assert.equal(r.o.requests[0].note, 'Not found');
+  assert.equal((await j('POST', '/api/premium/request', { id: d2, plan: 'p1', ref: 'EZ-77777' })).s, 200);
+  // admin stats, gift, revoke
+  r = await j('GET', '/admin/api/premium', null, A); assert.equal(r.o.stats.vip, 1); assert.equal(r.o.stats.income.total, 300 + 2500); assert.equal(r.o.stats.income.today, 2800); assert.equal(r.o.vips.length, 1);
+  assert.equal((await j('POST', '/admin/api/premium/grant', { id: d2, days: 7 }, A)).s, 200);
+  assert.equal((await j('GET', '/api/premium?id=' + d2)).o.active, true);
+  assert.equal((await j('POST', '/admin/api/premium/grant', { id: d2, days: 0 }, A)).s, 200);
+  assert.equal((await j('GET', '/api/premium?id=' + d2)).o.active, false);
+  assert.equal((await j('POST', '/admin/api/premium/grant', { id: 'cccccccc-9999', days: 5 }, A)).s, 404);
+  r = await fetch(B + '/admin/api/payments.csv', { headers: A }); assert.equal(r.status, 200); assert((await r.text()).includes('EZ-98765'));
+  // too many waiting requests from one phone
+  for (const k of ['AAAA1', 'AAAA2', 'AAAA3']) await j('POST', '/api/premium/request', { id: d1, plan: 'p1', ref: k });
+  assert.equal((await j('POST', '/api/premium/request', { id: d1, plan: 'p1', ref: 'AAAA4' })).s, 429);
+
   // login rate limit
   let last; for (let i = 0; i < 9; i++) last = await j('POST', '/admin/login', { password: 'x' }); assert.equal(last.s, 429);
   // oversized body

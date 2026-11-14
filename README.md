@@ -4,6 +4,8 @@ One server for every Typex Board phone:
 
 - **Admin panel** (open the site URL): send a notification to every phone, publish an app update, see how many phones are connected and which versions they use.
 - **Phones connect by themselves**: the app pings the server (anonymous random id, app version, phone model), checks for messages every hour and when the keyboard opens, and checks for updates every hour.
+- **Surveys**: write questions in the admin panel (Surveys page), phones show them in the app dashboard, you see live results with percentages, download all answers as CSV, clear them, or publish a new survey any time. Each phone has one answer per survey (it can change it).
+- **Phone control**: Overview shows new phones per day (14 days), Android versions, top phone models and versions. Phones page has search, CSV download and a Remove button.
 - **Updates**: you publish a version + APK link (or let the server follow your GitHub releases). Phones download it, show the install notification, or show "Update required" if you switch Required on.
 
 ## Deploy on Render (free)
@@ -41,4 +43,6 @@ npm test                          # end to end test of the API
 | `GET /api/update` | `{versionName, notes, apk, page, force}`, the same shape the app's updater already reads |
 | `POST /api/ping` | `{id, v, model, sdk}` registers or refreshes a phone |
 | `GET /api/messages?since=<ts>&v=<version>&id=<id>` | messages newer than `since` for this version |
+| `GET /api/survey` | the live survey `{id, title, questions:[{id, q, options, multi}]}` (built-in questions until you publish one) |
+| `POST /api/survey` | `{id, survey, v, answers:{questionId:[option,...]}}`, every question must be answered with its own options |
 | `POST /api/ack` | `{id, msg}` counts a message as delivered once per phone |

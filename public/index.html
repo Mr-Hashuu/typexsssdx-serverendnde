@@ -47,7 +47,7 @@ aside{width:230px;flex:none;border-right:1px solid var(--line);padding:20px 14px
 .sp{flex:1}
 main{flex:1;min-width:0;padding:26px;max-width:980px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;animation:rise .4s both}
 .stat b{display:block;font-size:28px;line-height:1.1;margin-top:6px}
 .stat span{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
@@ -76,8 +76,20 @@ td{padding:10px;border-top:1px solid var(--line)}
 .sk{height:84px;border-radius:var(--r);background:linear-gradient(90deg,var(--panel) 25%,var(--panel2) 50%,var(--panel) 75%);background-size:200% 100%;animation:shimmer 1.4s linear infinite}
 #toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);background:#241f38;border:1px solid var(--line);padding:11px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.3s;z-index:60;max-width:90vw}
 #toast.on{opacity:1;transform:translateX(-50%)}#toast.bad{border-color:#5a2330;color:var(--bad)}
+.cols{display:flex;align-items:flex-end;gap:5px;height:90px;margin-top:6px}
+.cols div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;font-size:10px;color:var(--mut)}
+.cols i{display:block;width:100%;min-height:3px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,var(--acc2),var(--acc))}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.qb{border:1px solid var(--line);background:var(--panel2);border-radius:14px;padding:14px;margin-top:12px}
+.qb textarea{min-height:60px}
+.qr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+.qr label{margin:0;display:flex;align-items:center;gap:8px}
+.btn.sm2{padding:8px 12px;font-size:13px}
+a.btn{display:inline-block;text-decoration:none}
+.wide .vb em{width:auto;max-width:46%;white-space:normal}
 .tabs{display:none}
 @media(max-width:820px){
+ .two{grid-template-columns:1fr}
  aside{display:none}main{padding:16px 14px 96px}
  .grid{grid-template-columns:repeat(2,1fr)}
  .tabs{display:flex;position:fixed;left:0;right:0;bottom:0;background:#100e1a;border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:20}
@@ -112,6 +124,7 @@ td{padding:10px;border-top:1px solid var(--line)}
     <button class="nav" data-p="notify"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>Notifications</button>
     <button class="nav" data-p="update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>App updates</button>
     <button class="nav" data-p="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Phones</button>
+    <button class="nav" data-p="survey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>Surveys</button>
     <div class="sp"></div>
     <button class="nav" id="out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out</button>
   </aside>
@@ -121,6 +134,7 @@ td{padding:10px;border-top:1px solid var(--line)}
     <button data-p="notify"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>Notify</button>
     <button data-p="update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>Update</button>
     <button data-p="devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Phones</button>
+    <button data-p="survey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>Survey</button>
     <button id="out2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out</button>
   </nav>
 </div>
@@ -162,14 +176,18 @@ function go(p) {
   page = p;
   $$('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === p));
   const v = $('#view'); v.innerHTML = '<div class="sk"></div><div class="sk sec"></div><div class="sk sec"></div>';
-  ({ home, notify, update, devices })[p]().catch(e => { if (e.message !== 'Login required') v.innerHTML = '<div class="card">' + esc(e.message) + '</div>'; });
+  ({ home, notify, update, devices, survey })[p]().catch(e => { if (e.message !== 'Login required') v.innerHTML = '<div class="card">' + esc(e.message) + '</div>'; });
 }
 
 async function home() {
   const s = await api('GET', '/admin/api/stats');
-  const max = Math.max(1, ...Object.values(s.versions));
-  const vers = Object.entries(s.versions).sort((a, b) => b[1] - a[1]).slice(0, 8)
-    .map(([v, n]) => `<div class="vb"><em>${esc(v)}</em><div class="t"><i style="width:${Math.round(n / max * 100)}%"></i></div><u>${n}</u></div>`).join('') || '<div class="mut">No phones have connected yet.</div>';
+  const bd = s.breakdown || { models: [], sdks: [], daily: [] };
+  const bars = (pairs, label) => {
+    const max = Math.max(1, ...pairs.map(x => x[1]));
+    return pairs.map(([k, n]) => `<div class="vb"><em>${esc(label ? label(k) : k)}</em><div class="t"><i style="width:${Math.round(n / max * 100)}%"></i></div><u>${n}</u></div>`).join('') || '<div class="mut">No data yet.</div>';
+  };
+  const dmax = Math.max(1, ...bd.daily.map(x => x.n));
+  const cols = bd.daily.map(x => `<div title="${esc(x.d)}: ${x.n}"><span>${x.n || ''}</span><i style="height:${Math.round(x.n / dmax * 70)}%"></i><span>${esc(x.d.slice(8))}</span></div>`).join('');
   const l = s.latest;
   $('#view').innerHTML = `
   <div class="top"><div><h1>Overview</h1><div class="mut sm">Storage: ${esc(s.db)}${s.db === 'memory' ? ' (data is lost on restart, set MONGODB_URI)' : ''}</div></div><button class="btn ghost" onclick="go('home')">Refresh</button></div>
@@ -178,8 +196,15 @@ async function home() {
     <div class="stat"><span>Active 24 hours</span><b>${s.active24h}</b></div>
     <div class="stat"><span>Active 7 days</span><b>${s.active7d}</b></div>
     <div class="stat"><span>New today</span><b>${s.new24h}</b></div>
+    <div class="stat"><span>Survey answers</span><b>${s.surveyAnswers || 0}</b></div>
+    <div class="stat"><span>Blocked phones</span><b>${s.blocked || 0}</b></div>
   </div>
-  <div class="card sec"><h2>Versions in use</h2>${vers}</div>
+  <div class="card sec"><h2>New phones, last 14 days</h2><div class="cols">${cols}</div></div>
+  <div class="two">
+    <div class="card sec wide"><h2>Versions in use</h2>${bars(Object.entries(s.versions).sort((a, b) => b[1] - a[1]).slice(0, 8))}</div>
+    <div class="card sec wide"><h2>Android versions</h2>${bars(bd.sdks, k => k === '?' ? 'Unknown' : 'API ' + k)}</div>
+  </div>
+  <div class="card sec wide"><h2>Top phone models</h2>${bars(bd.models)}</div>
   <div class="card sec"><h2>Last notification</h2>${l ? `<b>${esc(l.title)}</b><p class="mut" style="margin:6px 0">${esc(l.text)}</p><span class="pill ok">Delivered to ${l.acks || 0} phones</span><span class="mut sm">${ago(l.ts)}</span>` : '<div class="mut">Nothing sent yet.</div>'}</div>`;
 }
 
@@ -253,10 +278,78 @@ async function update() {
 }
 
 async function devices() {
-  const { devices: d } = await api('GET', '/admin/api/devices');
-  const rows = d.map(x => `<tr><td data-l="Phone">${esc(x.model || 'Unknown')}</td><td data-l="Version">${esc(x.v)}</td><td data-l="Android">${x.sdk ? 'API ' + esc(x.sdk) : '-'}</td><td data-l="Last seen">${ago(x.last)}</td><td data-l="First seen">${ago(x.first)}</td></tr>`).join('');
-  $('#view').innerHTML = `<div class="top"><div><h1>Phones</h1><div class="mut sm">The 200 most recent connections. Phones are anonymous.</div></div></div>
-  <div class="card" style="padding:8px 12px">${rows ? `<table><thead><tr><th>Phone</th><th>Version</th><th>Android</th><th>Last seen</th><th>First seen</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="mut" style="padding:12px">No phones yet.</div>'}</div>`;
+  $('#view').innerHTML = `<div class="top"><div><h1>Phones</h1><div class="mut sm">Search by model, version or id. Phones are anonymous.</div></div><a class="btn ghost" href="/admin/api/devices.csv">Download CSV</a></div>
+  <div class="row"><input id="dq" type="text" placeholder="Search phones, for example Redmi or 2.9" maxlength="40"><select id="df"><option value="">All phones</option><option value="1">Blocked only</option></select></div>
+  <div class="card sec" style="padding:8px 12px" id="dl"></div>`;
+  let timer;
+  const load = async () => {
+    const { devices: d } = await api('GET', '/admin/api/devices?q=' + encodeURIComponent($('#dq').value.trim()) + ($('#df').value ? '&blocked=1' : ''));
+    const rows = d.map(x => `<tr><td data-l="Phone">${esc(x.model || 'Unknown')}${x.blocked ? ' <span class="pill" style="background:#3a1620;color:var(--bad)">Blocked</span>' : ''}${x.blocked && x.reason ? `<div class="mut sm">${esc(x.reason)}</div>` : ''}</td><td data-l="Version">${esc(x.v)}</td><td data-l="Android">${x.sdk ? 'API ' + esc(x.sdk) : '-'}</td><td data-l="Last seen">${ago(x.last)}</td><td data-l="First seen">${ago(x.first)}</td><td><button class="btn ${x.blocked ? 'ghost' : 'danger'} sm2" data-bk="${esc(x.id)}" data-bs="${x.blocked ? '' : '1'}">${x.blocked ? 'Unblock' : 'Block'}</button> <button class="btn ghost sm2" data-rm="${esc(x.id)}">Remove</button></td></tr>`).join('');
+    $('#dl').innerHTML = rows ? `<div class="mut sm" style="padding:6px 4px">Showing ${d.length} phones (most recent 200)</div><table><thead><tr><th>Phone</th><th>Version</th><th>Android</th><th>Last seen</th><th>First seen</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="mut" style="padding:12px">No phones found.</div>';
+    $$('[data-bk]').forEach(b => b.onclick = async () => {
+      const block = !!b.dataset.bs; let reason = '';
+      if (block) { reason = prompt('Block this phone from the Typex server (updates, messages, survey). Reason, shown to you only (optional):', ''); if (reason === null) return; }
+      else if (!confirm('Unblock this phone?')) return;
+      try { await api('POST', '/admin/api/devices/block', { id: b.dataset.bk, blocked: block, reason }); toast(block ? 'Phone blocked' : 'Phone unblocked'); load(); } catch (e) { toast(e.message, true); }
+    });
+    $$('[data-rm]').forEach(b => b.onclick = async () => {
+      if (!confirm('Remove this phone from the list? It appears again the next time it connects.')) return;
+      try { await api('DELETE', '/admin/api/devices/' + encodeURIComponent(b.dataset.rm)); toast('Removed'); load(); } catch (e) { toast(e.message, true); }
+    });
+  };
+  $('#df').onchange = () => load().catch(e => toast(e.message, true));
+  $('#dq').oninput = () => { clearTimeout(timer); timer = setTimeout(() => load().catch(e => toast(e.message, true)), 300); };
+  await load();
+}
+
+async function survey() {
+  const r = await api('GET', '/admin/api/survey');
+  const sv = r.survey;
+  const res = r.results.map(q => {
+    const max = Math.max(1, ...q.options.map(o => o.n));
+    return `<div style="margin-top:16px"><b>${esc(q.q)}</b>${q.multi ? ' <span class="pill">multiple</span>' : ''}${q.options.map(o => `<div class="vb"><em>${esc(o.o)}</em><div class="t"><i style="width:${Math.round(o.n / max * 100)}%"></i></div><u>${o.n}${r.count ? ' · ' + Math.round(o.n / r.count * 100) + '%' : ''}</u></div>`).join('')}</div>`;
+  }).join('');
+  $('#view').innerHTML = `
+  <div class="top"><div><h1>Surveys</h1><div class="mut sm">Questions appear in the app dashboard. Phones answer once and can change their answer.</div></div></div>
+  <div class="card wide">
+    <div class="h" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <div><h2 style="margin:0">${esc(sv.title)}</h2><span class="pill ok">${r.count} answers</span>${r.isDefault ? '<span class="pill">built-in questions</span>' : '<span class="pill">live</span>'}</div>
+      <div><a class="btn ghost sm2" href="/admin/api/survey.csv">Download CSV</a> <button class="btn danger sm2" id="sclr">Clear answers</button></div>
+    </div>${res}
+  </div>
+  <div class="card sec">
+    <h2>${r.isDefault ? 'Create a survey' : 'Publish a new survey'}</h2>
+    <div class="mut sm">Publishing replaces the live survey. Phones get the new questions the next time they open the app and can answer again. Old answers stay saved but are no longer shown.</div>
+    <label for="stt">Survey title</label><input id="stt" type="text" maxlength="60" value="${esc(sv.title)}">
+    <div id="qs"></div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost" id="addq">Add question</button><button class="btn" id="spub">Publish survey</button></div>
+  </div>`;
+  const qs = sv.questions.map(q => ({ q: q.q, options: q.options.join('\n'), multi: !!q.multi }));
+  const draw = () => {
+    $('#qs').innerHTML = qs.map((q, i) => `<div class="qb"><div class="qr" style="margin-top:0"><b>Question ${i + 1}</b>${qs.length > 1 ? `<button class="btn danger sm2" data-rq="${i}">Remove</button>` : ''}</div>
+      <label>Question</label><textarea data-q="${i}" maxlength="200">${esc(q.q)}</textarea>
+      <label>Answers, one per line (2 to 8)</label><textarea data-o="${i}" maxlength="600">${esc(q.options)}</textarea>
+      <div class="qr"><label><input type="checkbox" data-m="${i}" ${q.multi ? 'checked' : ''}> Allow more than one answer</label></div></div>`).join('');
+    $$('[data-q]').forEach(t => t.oninput = () => { qs[t.dataset.q].q = t.value; });
+    $$('[data-o]').forEach(t => t.oninput = () => { qs[t.dataset.o].options = t.value; });
+    $$('[data-m]').forEach(t => t.onchange = () => { qs[t.dataset.m].multi = t.checked; });
+    $$('[data-rq]').forEach(b => b.onclick = () => { qs.splice(+b.dataset.rq, 1); draw(); });
+    $('#addq').classList.toggle('hide', qs.length >= 10);
+  };
+  draw();
+  $('#addq').onclick = () => { if (qs.length < 10) { qs.push({ q: '', options: '', multi: false }); draw(); } };
+  $('#spub').onclick = async () => {
+    if (!confirm('Publish this survey to every phone?')) return;
+    const b = $('#spub'); b.disabled = true;
+    try {
+      await api('POST', '/admin/api/survey', { title: $('#stt').value, questions: qs.map(q => ({ q: q.q, options: q.options.split('\n'), multi: q.multi })) });
+      toast('Survey published'); go('survey');
+    } catch (e) { toast(e.message, true); b.disabled = false; }
+  };
+  $('#sclr').onclick = async () => {
+    if (!confirm('Delete all ' + r.count + ' answers of this survey? This cannot be undone.')) return;
+    try { await api('POST', '/admin/api/survey/clear', {}); toast('Answers cleared'); go('survey'); } catch (e) { toast(e.message, true); }
+  };
 }
 
 (async () => {

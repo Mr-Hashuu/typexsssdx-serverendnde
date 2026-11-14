@@ -58,6 +58,64 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   r = await j('GET', '/api/messages?since=0&v=2.5&id=' + d2); assert.equal(r.o.messages.length, 1);
   r = await j('GET', '/admin/api/devices', null, A); assert.equal(r.o.devices.length, 2);
 
+
+  // survey: built-in questions work before anything is published
+  r = await j('GET', '/api/survey'); assert.equal(r.s, 200); assert.equal(r.o.id, 'default1'); assert.equal(r.o.questions.length, 4);
+  const good = { use: ['Every day'], fav: ['Themes', 'Clipboard'], rate: ['4 - Very good'], next: ['Other'] };
+  assert.equal((await j('POST', '/api/survey', { id: 'x', survey: 'default1', answers: good })).s, 400);
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'nope', answers: good })).s, 409);
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'default1', answers: Object.assign({}, good, { use: ['Every day', 'Rarely'] }) })).s, 400); // single choice
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'default1', answers: Object.assign({}, good, { rate: ['hack'] }) })).s, 400); // not an option
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'default1', answers: { use: ['Every day'] } })).s, 400); // missing questions
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'default1', answers: good, v: '2.9' })).s, 200);
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'default1', answers: Object.assign({}, good, { rate: ['5 - Excellent'] }) })).s, 200); // same phone replaces its answer
+  assert.equal((await j('POST', '/api/survey', { id: d2, survey: 'default1', answers: good })).s, 200);
+  assert.equal((await j('GET', '/admin/api/survey')).s, 401);
+  r = await j('GET', '/admin/api/survey', null, A); assert.equal(r.o.count, 2); assert(r.o.isDefault);
+  const rate = r.o.results.find(q => q.id === 'rate').options; assert.equal(rate.find(o => o.o === '5 - Excellent').n, 1); assert.equal(rate.find(o => o.o === '4 - Very good').n, 1);
+  assert.equal(r.o.results.find(q => q.id === 'fav').options.find(o => o.o === 'Themes').n, 2);
+  r = await j('GET', '/admin/api/stats', null, A); assert.equal(r.o.surveyAnswers, 2); assert.equal(r.o.breakdown.daily.length, 14); assert.equal(r.o.breakdown.models[0][1], 1);
+  r = await fetch(B + '/admin/api/survey.csv', { headers: A }); assert(r.headers.get('content-type').startsWith('text/csv')); const csv = await r.text(); assert(csv.includes('5 - Excellent') && csv.split('\r\n').length === 3);
+
+  // survey: publish own questions, validation, old survey closes
+  assert.equal((await j('POST', '/admin/api/survey', { title: 'x', questions: [] }, A)).s, 400);
+  assert.equal((await j('POST', '/admin/api/survey', { title: 'x', questions: [{ q: 'Only one option?', options: ['a', 'a'] }] }, A)).s, 400);
+  assert.equal((await j('POST', '/admin/api/survey', { title: 'x', questions: [null] }, A)).s, 400);
+  r = await j('POST', '/admin/api/survey', { title: 'Next features', questions: [{ q: 'Pick one', options: ['Dark mode', 'Gestures', ' Gestures '], multi: false }, { q: 'Pick many', options: ['A', 'B', 'C'], multi: true }] }, A);
+  assert.equal(r.s, 200); const sid = r.o.survey.id;
+  r = await j('GET', '/api/survey'); assert.equal(r.o.id, sid); assert.deepEqual(r.o.questions[0].options, ['Dark mode', 'Gestures']); assert.equal(r.o.questions[1].id, 'q2');
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: 'default1', answers: good })).s, 409); // old survey closed
+  assert.equal((await j('POST', '/api/survey', { id: d1, survey: sid, answers: { q1: ['Gestures'], q2: ['A', 'C'] } })).s, 200);
+  r = await j('GET', '/admin/api/survey', null, A); assert.equal(r.o.count, 1); assert(!r.o.isDefault);
+  r = await j('POST', '/admin/api/survey/clear', {}, A); assert.equal(r.o.removed, 1);
+  assert.equal((await j('GET', '/admin/api/survey', null, A)).o.count, 0);
+
+  // phones: search, csv, remove
+  r = await j('GET', '/admin/api/devices?q=redmi', null, A); assert.equal(r.o.devices.length, 1); assert.equal(r.o.devices[0].model, 'Redmi 12');
+  r = await j('GET', '/admin/api/devices?q=2.5', null, A); assert.equal(r.o.devices.length, 1);
+  r = await j('GET', '/admin/api/devices?q=zzz', null, A); assert.equal(r.o.devices.length, 0);
+  r = await fetch(B + '/admin/api/devices.csv', { headers: A }); assert((await r.text()).includes('Galaxy A14'));
+  assert.equal((await j('DELETE', '/admin/api/devices/' + d2, null, A)).s, 200);
+  assert.equal((await j('DELETE', '/admin/api/devices/' + d2, null, A)).s, 404);
+  assert.equal((await j('GET', '/admin/api/stats', null, A)).o.total, 1);
+  await j('POST', '/api/ping', { id: d2, v: '2.5', model: 'Galaxy A14', sdk: 33 });
+
+  // block / unblock a phone
+  assert.equal((await j('POST', '/admin/api/devices/block', { id: d2, blocked: true })).s, 401);
+  assert.equal((await j('POST', '/admin/api/devices/block', { id: 'x', blocked: true }, A)).s, 400);
+  assert.equal((await j('POST', '/admin/api/devices/block', { id: 'cccccccc-9999', blocked: true }, A)).s, 404);
+  assert.equal((await j('POST', '/admin/api/devices/block', { id: d2, blocked: true, reason: 'spam' }, A)).s, 200);
+  r = await j('POST', '/api/ping', { id: d2, v: '2.5', model: 'Galaxy A14', sdk: 33 }); assert.equal(r.o.blocked, true); assert.equal(r.o.reason, 'spam');
+  r = await j('POST', '/api/ping', { id: d1, v: '2.8', model: 'Redmi 12', sdk: 34 }); assert.equal(r.o.blocked, false);
+  r = await j('GET', '/api/messages?since=0&v=2.5&id=' + d2); assert.equal(r.o.messages.length, 0); assert.equal(r.o.blocked, true);
+  assert.equal((await j('POST', '/api/ack', { id: d2, msg: m1.id })).s, 403);
+  assert.equal((await j('POST', '/api/survey', { id: d2, survey: (await j('GET', '/api/survey')).o.id, answers: { q1: ['Gestures'], q2: ['A'] } })).s, 403);
+  r = await j('GET', '/admin/api/stats', null, A); assert.equal(r.o.blocked, 1);
+  r = await j('GET', '/admin/api/devices?blocked=1', null, A); assert.equal(r.o.devices.length, 1); assert.equal(r.o.devices[0].id, d2);
+  assert.equal((await j('POST', '/admin/api/devices/block', { id: d2, blocked: false }, A)).s, 200);
+  r = await j('POST', '/api/ping', { id: d2, v: '2.5', model: 'Galaxy A14', sdk: 33 }); assert.equal(r.o.blocked, false);
+  assert.equal((await j('GET', '/admin/api/stats', null, A)).o.blocked, 0);
+
   // login rate limit
   let last; for (let i = 0; i < 9; i++) last = await j('POST', '/admin/login', { password: 'x' }); assert.equal(last.s, 429);
   // oversized body

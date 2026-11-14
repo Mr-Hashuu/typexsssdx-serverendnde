@@ -98,6 +98,64 @@ async function updateFeed() {
   return manual;
 }
 
+
+/* ---------- survey ---------- */
+const DEFAULT_SURVEY = {
+  id: 'default1', title: 'Quick survey',
+  questions: [
+    { id: 'use', q: 'How often do you use Typex Board?', options: ['Every day', 'A few times a week', 'Rarely', 'Just installed'], multi: false },
+    { id: 'fav', q: 'Which features do you like most?', options: ['Sinhala typing', 'Themes', 'Stylish fonts', 'Clipboard', 'Voice typing', 'Templates'], multi: true },
+    { id: 'rate', q: 'How would you rate the keyboard?', options: ['1 - Poor', '2 - Fair', '3 - Good', '4 - Very good', '5 - Excellent'], multi: false },
+    { id: 'next', q: 'What should we add next?', options: ['More themes', 'Better Sinhala suggestions', 'More templates', 'Faster typing', 'Other'], multi: true }
+  ]
+};
+async function blockInfo(id) {
+  if (!okId(id)) return null;
+  const d = await db.getDevice(id);
+  return d && d.blocked ? { blocked: true, reason: d.reason || '' } : null;
+}
+async function liveSurvey() { return (await db.getSetting('survey', null)) || DEFAULT_SURVEY; }
+function cleanSurvey(b) {
+  const title = str(b.title, 60) || 'Quick survey';
+  const src = Array.isArray(b.questions) ? b.questions : [];
+  if (src.length < 1 || src.length > 10) return { error: 'A survey needs 1 to 10 questions' };
+  const questions = [];
+  for (let i = 0; i < src.length; i++) {
+    const it = src[i] || {};
+    const q = str(it.q, 200);
+    const options = [...new Set((Array.isArray(it.options) ? it.options : []).map(o => str(o, 60)).filter(Boolean))];
+    if (!q) return { error: 'Question ' + (i + 1) + ' is empty' };
+    if (options.length < 2 || options.length > 8) return { error: 'Question ' + (i + 1) + ' needs 2 to 8 different answers' };
+    questions.push({ id: 'q' + (i + 1), q, options, multi: !!it.multi });
+  }
+  return { survey: { id: 's' + Date.now().toString(36), title, questions, at: Date.now() } };
+}
+function cleanAnswers(s, raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  for (const q of s.questions) {
+    const a = raw[q.id];
+    const uniq = [...new Set((Array.isArray(a) ? a : []).map(x => String(x)))];
+    if (!uniq.length || uniq.some(x => !q.options.includes(x))) return null;
+    if (!q.multi && uniq.length !== 1) return null;
+    out[q.id] = uniq;
+  }
+  return out;
+}
+function tally(s, list) {
+  return s.questions.map(q => {
+    const c = Object.create(null); q.options.forEach(o => { c[o] = 0; });
+    list.forEach(r => ((r.answers && r.answers[q.id]) || []).forEach(o => { if (o in c) c[o]++; }));
+    return { id: q.id, q: q.q, multi: q.multi, options: q.options.map(o => ({ o, n: c[o] })) };
+  });
+}
+function csvCell(v) { let t = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; }
+function sendCsv(res, name, rows) {
+  const body = '\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+  res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="' + name + '"', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.end(body);
+}
+
 /* ---------- routes ---------- */
 async function publicApi(req, res, url) {
   const ip = ipOf(req);
@@ -110,7 +168,8 @@ async function publicApi(req, res, url) {
     const id = str(b.id, 64);
     if (!okId(id)) return send(res, 400, { error: 'Bad id' });
     await db.upsertDevice(id, { v: str(b.v, 16) || '?', model: str(b.model, 60), sdk: parseInt(b.sdk, 10) || 0 });
-    return send(res, 200, { ok: true });
+    const bi = await blockInfo(id);
+    return send(res, 200, bi ? { ok: true, blocked: true, reason: bi.reason } : { ok: true, blocked: false });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/messages') {
@@ -118,8 +177,27 @@ async function publicApi(req, res, url) {
     const v = str(url.searchParams.get('v'), 16);
     const id = str(url.searchParams.get('id'), 64);
     if (okId(id)) await db.upsertDevice(id, v ? { v } : {});
+    const bi = await blockInfo(id);
+    if (bi) return send(res, 200, { messages: [], blocked: true, reason: bi.reason });
     const list = (await db.messagesSince(since, 10)).filter(m => !m.before || !v || newer(m.before, v));
     return send(res, 200, { messages: list.map(m => ({ id: m.id, title: m.title, text: m.text, link: m.link, ts: m.ts })) });
+  }
+
+
+  if (req.method === 'GET' && url.pathname === '/api/survey') return send(res, 200, await liveSurvey());
+
+  if (req.method === 'POST' && url.pathname === '/api/survey') {
+    if (limited('sv|' + ip, 20, 600000)) return send(res, 429, { error: 'Slow down' });
+    const b = await readJson(req);
+    const id = str(b.id, 64), sid = str(b.survey, 40);
+    if (!okId(id)) return send(res, 400, { error: 'Bad id' });
+    if (await blockInfo(id)) return send(res, 403, { error: 'This phone is blocked' });
+    const s = await liveSurvey();
+    if (sid !== s.id) return send(res, 409, { error: 'This survey is closed' });
+    const answers = cleanAnswers(s, b.answers);
+    if (!answers) return send(res, 400, { error: 'Please answer every question' });
+    await db.upsertResponse({ survey: s.id, device: id, answers, v: str(b.v, 16) || '?', ts: Date.now() });
+    return send(res, 200, { ok: true });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/ack') {
@@ -127,6 +205,7 @@ async function publicApi(req, res, url) {
     const id = str(b.id, 64), mid = str(b.msg, 64);
     if (!okId(id) || !mid) return send(res, 400, { error: 'Bad request' });
     const m = await db.getMessage(mid), d = await db.getDevice(id);
+    if (d && d.blocked) return send(res, 403, { error: 'This phone is blocked' });
     if (m && d && (d.lastAck || 0) < m.ts) { await db.setLastAck(id, m.ts); await db.incAck(mid); }
     return send(res, 200, { ok: true });
   }
@@ -153,10 +232,27 @@ async function adminApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/admin/api/me') return send(res, 200, { ok: true, db: db.kind });
   if (req.method === 'GET' && url.pathname === '/admin/api/stats') {
-    const [st, msgs] = await Promise.all([db.stats(), db.listMessages(1)]);
-    return send(res, 200, Object.assign(st, { latest: msgs[0] || null, db: db.kind }));
+    const live = await liveSurvey();
+    const [st, msgs, bd, sc] = await Promise.all([db.stats(), db.listMessages(1), db.breakdown(), db.countResponses(live.id)]);
+    return send(res, 200, Object.assign(st, { latest: msgs[0] || null, db: db.kind, breakdown: bd, surveyAnswers: sc, surveyTitle: live.title }));
   }
-  if (req.method === 'GET' && url.pathname === '/admin/api/devices') return send(res, 200, { devices: await db.listDevices(200) });
+  if (req.method === 'GET' && url.pathname === '/admin/api/devices') return send(res, 200, { devices: await db.listDevices(200, str(url.searchParams.get('q'), 40), url.searchParams.get('blocked') === '1') });
+  if (req.method === 'POST' && url.pathname === '/admin/api/devices/block') {
+    const b = await readJson(req);
+    const id = str(b.id, 64);
+    if (!okId(id)) return send(res, 400, { error: 'Bad id' });
+    const ok = await db.setBlocked(id, !!b.blocked, str(b.reason, 120));
+    return send(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'Phone not found' });
+  }
+  if (req.method === 'GET' && url.pathname === '/admin/api/devices.csv') {
+    const list = await db.listDevices(5000, '');
+    const iso = t => t ? new Date(t).toISOString() : '';
+    return sendCsv(res, 'typex-phones.csv', [['Phone id', 'Model', 'App version', 'Android API', 'First seen', 'Last seen', 'Blocked', 'Block reason']].concat(list.map(d => [d.id, d.model || '', d.v || '', d.sdk || '', iso(d.first), iso(d.last), d.blocked ? 'yes' : '', d.reason || ''])));
+  }
+  if (req.method === 'DELETE' && url.pathname.startsWith('/admin/api/devices/')) {
+    const ok = await db.deleteDevice(decodeURIComponent(url.pathname.split('/').pop()));
+    return send(res, ok ? 200 : 404, { ok });
+  }
   if (req.method === 'GET' && url.pathname === '/admin/api/messages') return send(res, 200, { messages: await db.listMessages(50) });
 
   if (req.method === 'POST' && url.pathname === '/admin/api/messages') {
@@ -172,6 +268,28 @@ async function adminApi(req, res, url) {
   if (req.method === 'DELETE' && url.pathname.startsWith('/admin/api/messages/')) {
     const ok = await db.deleteMessage(decodeURIComponent(url.pathname.split('/').pop()));
     return send(res, ok ? 200 : 404, { ok });
+  }
+
+
+  if (req.method === 'GET' && url.pathname === '/admin/api/survey') {
+    const s = await liveSurvey(), list = await db.listResponses(s.id, 5000);
+    return send(res, 200, { survey: s, isDefault: s.id === DEFAULT_SURVEY.id, count: list.length, results: tally(s, list) });
+  }
+  if (req.method === 'POST' && url.pathname === '/admin/api/survey') {
+    const c = cleanSurvey(await readJson(req, 32768));
+    if (c.error) return send(res, 400, { error: c.error });
+    await db.setSetting('survey', c.survey);
+    return send(res, 200, { ok: true, survey: c.survey });
+  }
+  if (req.method === 'POST' && url.pathname === '/admin/api/survey/clear') {
+    const s = await liveSurvey();
+    return send(res, 200, { ok: true, removed: await db.clearResponses(s.id) });
+  }
+  if (req.method === 'GET' && url.pathname === '/admin/api/survey.csv') {
+    const s = await liveSurvey(), list = await db.listResponses(s.id, 5000);
+    const head = ['Phone', 'App version', 'Answered at'].concat(s.questions.map(q => q.q));
+    const rows = list.map(r => [String(r.device).slice(0, 8), r.v || '', new Date(r.ts).toISOString()].concat(s.questions.map(q => ((r.answers && r.answers[q.id]) || []).join(' | '))));
+    return sendCsv(res, 'typex-survey-' + s.id + '.csv', [head].concat(rows));
   }
 
   if (req.method === 'GET' && url.pathname === '/admin/api/update') {
